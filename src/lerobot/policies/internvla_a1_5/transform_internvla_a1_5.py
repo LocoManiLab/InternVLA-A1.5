@@ -86,11 +86,31 @@ class InternVLAA15ChatProcessorTransformFn(DataTransformFn):
         return replace(self, action_mode=getattr(schema, "action_mode", "joint"))
 
     def __post_init__(self):
-        self.processor = Qwen3VLProcessor.from_pretrained(self.pretrained_model_name_or_path)
-        ensure_qwen35_action_tokens(self.processor.tokenizer)
-        self.vision_start_token_id = self.processor.vision_start_token_id
-        self.vision_end_token_id = self.processor.vision_end_token_id
-        self.image_token_id = self.processor.image_token_id
+        # LocoManiLab (g1-sonic): LAZY. This used to build the Qwen3-VL processor eagerly, and
+        # `InternVLAA15DatasetConfig.data_transforms`'s default_factory instantiates one
+        # of these purely to throw it away (__post_init__ there filters it out and
+        # inserts a correctly-configured replacement). Building it eagerly therefore
+        # resolved the *default* hub id "Qwen/Qwen3.5-2B" before any CLI override was
+        # applied -- which under HF_HUB_OFFLINE=1 aborts the whole run with
+        #   OSError: We couldn't connect to 'https://huggingface.co' ...
+        # wrapped in a draccus DecodingError that names the `dataset` field, not the
+        # processor. Deferring the load makes the throw-away instance free and lets
+        # --dataset.vlm_model_name_or_path point at a local checkout.
+        self._processor = None
+
+    def _ensure_processor(self):
+        if self._processor is not None:
+            return
+        self._processor = Qwen3VLProcessor.from_pretrained(self.pretrained_model_name_or_path)
+        ensure_qwen35_action_tokens(self._processor.tokenizer)
+        self.vision_start_token_id = self._processor.vision_start_token_id
+        self.vision_end_token_id = self._processor.vision_end_token_id
+        self.image_token_id = self._processor.image_token_id
+
+    @property
+    def processor(self):
+        self._ensure_processor()
+        return self._processor
 
     def _encode_state(self, data: DataDict) -> str:
         if not self.tokenize_state or OBS_STATE not in data:
@@ -102,6 +122,7 @@ class InternVLAA15ChatProcessorTransformFn(DataTransformFn):
         return "State: " + " ".join(map(str, discretized))
 
     def __call__(self, data: DataDict) -> DataDict:
+        self._ensure_processor()
         state_str = self._encode_state(data)
 
         images, valid_image_indices = [], []
@@ -383,6 +404,19 @@ class FASTInternVLAA15ActionTokenizerTransformFn(DataTransformFn):
     stop_token_2: int = 198     # Second stop token (newline)
     
     def __post_init__(self):
+        # LocoManiLab (g1-sonic): LAZY, for the same reason as the chat processor above -- and
+        # with a sharper edge here, because this one also reaches for the hub repo
+        # "physical-intelligence/fast". `InternVLAA15DatasetConfig` instantiates one in
+        # its default_factory and then DELETES it again whenever
+        # use_fast_action_tokens=false (which is the G1 SONIC recipe: FAST text tokens
+        # over a 64-D latent motion token carry no meaning), so an offline run used to
+        # die for a transform it was never going to use.
+        self._loaded = False
+
+    def _ensure_tokenizers(self):
+        if self._loaded:
+            return
+        self._loaded = True
         logging.info("Loading FAST tokenizer from %s", self.action_tokenizer_name)
         self.action_tokenizer = AutoProcessor.from_pretrained(
             self.action_tokenizer_name,
@@ -432,6 +466,7 @@ class FASTInternVLAA15ActionTokenizerTransformFn(DataTransformFn):
         Returns:
             Text string with special token markers
         """
+        self._ensure_tokenizers()
         return ''.join([f"<robot_action_{token}>" for token in fast_tokens])
 
     def extract_action_token_ids(
@@ -541,6 +576,7 @@ class FASTInternVLAA15ActionTokenizerTransformFn(DataTransformFn):
             List of action arrays with shape (num_actions, action_dim).
             None is returned for sequences with no tokens or invalid tokens.
         """
+        self._ensure_tokenizers()
         batch_actions = []
         for fast_ids in batch_fast_token_ids:
             if fast_ids is None or len(fast_ids) == 0:
@@ -560,6 +596,7 @@ class FASTInternVLAA15ActionTokenizerTransformFn(DataTransformFn):
         return batch_actions
 
     def __call__(self, data: DataDict) -> DataDict:
+        self._ensure_tokenizers()
         action = data[ACTION]
         device = action.device if isinstance(action, torch.Tensor) else torch.device("cpu")
         

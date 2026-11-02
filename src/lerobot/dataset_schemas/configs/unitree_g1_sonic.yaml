@@ -1,0 +1,52 @@
+# Unitree G1 whole-body teleop data collected by the `LocoManiLab` pipeline
+# (github.com/LocoManiLab/LocoManiLab), GR00T-Sonic controller lane.
+#
+# ── ACTION (78-D, ABSOLUTE) ─────────────────────────────────────────────────
+# The action is NOT an end-effector pose and NOT a joint target. It is
+#   action.motion_token        64  a latent whole-body pose code produced by the
+#                                  SONIC encoder and consumed by the SONIC decoder
+#   teleop.left_hand_joints     7  Dex3 finger targets, hardware order
+#   teleop.right_hand_joints    7  (thumb_0,1,2 index_0,1 middle_0,1)
+# concatenated in exactly that order = 78. Absolute, never a delta from state:
+# `action_mask_spec` is deliberately absent and the launch recipe uses
+# `--dataset.action_mode=abs`, which drops DeltaActionTransformFn.
+#
+# 🔴 Never derive the action list by globbing `action*`: the dataset also carries
+#    `action.wbc` (29-D whole-body-controller targets, recorded for debugging).
+#    Including it silently yields a 93-D action and every downstream number --
+#    loss, MSE, success rate -- becomes incomparable.
+#
+# ── STATE (43-D) ────────────────────────────────────────────────────────────
+# `observation.state` is one flat 43-vector; hands are INTERLEAVED between the
+# arms, not appended:
+#   0:6 left_leg  6:12 right_leg  12:15 waist  15:22 left_arm
+#   22:29 left_hand  29:36 right_arm  36:43 right_hand
+# Nothing here has to slice it -- the policy pads the whole vector to
+# `max_state_dim` -- but the serving side does, so the order is recorded here too.
+#
+# ── CAMERA ──────────────────────────────────────────────────────────────────
+# One head-mounted ego camera at 240x320. Slots image1/image2 are left unmapped;
+# RemapImageKeyTransformFn fills them with ones-like(image0) and masks them off,
+# and the chat processor then emits a single <image> placeholder.
+#
+# ── WHY THIS robot_type ─────────────────────────────────────────────────────
+# LocoManiLab's datasets carry `robot_type` "G1FloatingBody" or "G1NewFloatingBody" in
+# their own meta/info.json, and BOTH values are shared across four different
+# controllers (sonic / heft / amo / almi) whose action spaces are 78 / 50 / 36 /
+# ... dims of entirely different meaning. Keying a schema on either value would
+# merge them. So LocoManiLab's v2.1->v3.0 converter rewrites the converted copy's
+# robot_type to the controller lane -- `unitree_g1_sonic` -- which is
+# unambiguous. See scripts/data/locomanilab_lerobot_v21_to_v30.py.
+
+- robot_type: unitree_g1_sonic
+  feature_mapping:
+    observation.state:
+      - observation.state              # 43
+    action:
+      - action.motion_token            # 64
+      - teleop.left_hand_joints        #  7
+      - teleop.right_hand_joints       #  7   -> 78
+  image_mapping:
+    observation.images.ego_view: observation.images.image0
+  action_mode: joint                   # -> prompt tag "Control Mode: <joint>"
+  description: "Unitree G1 whole-body SONIC latent motion token (78-D absolute) + ego_view"

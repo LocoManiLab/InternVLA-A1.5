@@ -187,3 +187,18 @@ open_loop_results/
 third_party/
 export_internvla_a15_checkpoint.py
 ckpt/
+### LocoManiLab integration (uni-loco-manip fork) ###
+*.pt
+*.pth
+*.safetensors
+.venv*
+checkpoints/
+outputs/
+runs/
+wandb/
+# Upstream ignores a bare `data` (line ~167), which matches at ANY depth -- so it also
+# swallows scripts/data/, where this fork's LocoManiLab tooling lives, and `git status` simply
+# never mentions those files. Re-include the directory (which git must see before it can
+# see anything inside it), then its contents.
+!scripts/data/
+!scripts/data/**

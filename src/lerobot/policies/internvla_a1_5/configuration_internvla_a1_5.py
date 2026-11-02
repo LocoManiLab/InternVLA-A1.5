@@ -32,6 +32,13 @@ class InternVLAA15DatasetConfig(DatasetConfig):
     num_video_frames: int = 4
     video_height: int = 224
     video_width: int = 224
+    # LocoManiLab (g1-sonic): where the chat processor's tokenizer / image processor come
+    # from. __post_init__ used to construct InternVLAA15ChatProcessorTransformFn
+    # without this argument, so the DATASET side always resolved the hub id
+    # "Qwen/Qwen3.5-2B" -- which is unreachable under HF_HUB_OFFLINE=1 on an
+    # air-gapped cluster, even though --policy.vlm_model_name_or_path already points
+    # at a local copy. Default unchanged, so this is a no-op for upstream recipes.
+    vlm_model_name_or_path: str = "Qwen/Qwen3.5-2B"
 
     data_transforms: TransformGroup = field(
         default_factory=lambda: TransformGroup(
@@ -75,6 +82,7 @@ class InternVLAA15DatasetConfig(DatasetConfig):
             inputs = [t for t in inputs if not isinstance(t, DeltaActionTransformFn)]
 
         processor = InternVLAA15ChatProcessorTransformFn(
+            pretrained_model_name_or_path=self.vlm_model_name_or_path,
             tokenize_state=self.tokenize_state,
             max_state_dim=self.max_state_dim,
             max_length=self.max_prompt_length,
@@ -422,5 +430,17 @@ class InternVLAA15Config(PreTrainedConfig):
 
     @property
     def image_delta_indices(self) -> list | None:
+        # LocoManiLab (g1-sonic): the future frames these indices request exist only to
+        # supervise the WAN branch. With action_loss_only=True that branch is never
+        # built (modeling_internvla_a1_5.py:576) and video_loss is hardcoded to 0.0
+        # (:1233-1234), so every extra frame is decoded and thrown away -- 5x the
+        # video-decode cost per sample for nothing. Returning None here drops the
+        # image entry from resolve_delta_timestamps (datasets/factory.py:315-316);
+        # ExtractVideoFramesTransformFn then no-ops (it is guarded by `if src.ndim
+        # == 4`) and UnifyInternVLAA15InputsTransformFn zero-fills the absent
+        # observation.video_frames, so the tensor shapes downstream are unchanged.
+        # Flip action_loss_only off and the full foresight pipeline comes back.
+        if self.action_loss_only:
+            return None
         n = self.num_video_frames + 1
         return [self.chunk_size * i // (n - 1) for i in range(n)]

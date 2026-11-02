@@ -1,3 +1,38 @@
+## LocoManiLab modifications
+
+This repository is a modified fork of [InternRobotics/InternVLA-A-series](https://github.com/InternRobotics/InternVLA-A-series), based on upstream commit [`e6fc904`](https://github.com/InternRobotics/InternVLA-A-series/commit/e6fc904f9edbfb14532e97095fc2372202517f76). It was modified by Gamma Robotics for the [LocoManiLab](https://github.com/Gamma-Robot/LocoManiLab) humanoid loco-manipulation benchmark, which uses it as a git submodule. Everything below this section is the upstream README, unchanged.
+
+Summary of changes:
+
+- Register the Unitree G1 SONIC embodiment: dataset schema `src/lerobot/dataset_schemas/configs/unitree_g1_sonic.yaml` (43-D state, 78-D absolute action = 64-D motion token + 7 + 7 hand joints, one ego camera).
+- `tools/widen_for_g1_sonic.py`: widens the released InternVLA-A1.5 base checkpoint to the G1 action/state dimensions.
+- `scripts/data/locomanilab_lerobot_v21_to_v30.py` and `scripts/data/locomanilab_check_g1_ingestion.py`: LeRobot v2.1 to v3.0 conversion and an ingestion check for G1 data (the `soma_*` scripts are deprecated compatibility entry points).
+- `deployment/run_internvla_server.py`: a policy server speaking the Isaac-GR00T ZMQ `get_action` protocol, so the LocoManiLab simulator/robot client can drive InternVLA-A1.5.
+- Policy config/transform: a configurable `vlm_model_name_or_path` for the data-side processor (offline use), lazy tokenizer loading, and no future-frame decoding when `action_loss_only` is set.
+- `scripts/setup_env.sh` and `docs/locomanilab_g1_sonic_recipe.md`: environment setup and the G1 SONIC training recipe; `.gitignore` and a CPU test for the entry points.
+
+Files modified or added relative to the upstream base commit:
+
+- `.gitignore` (modified)
+- `README.md` (modified: this section)
+- `deployment/run_internvla_server.py` (added)
+- `docs/locomanilab_g1_sonic_recipe.md` (added)
+- `docs/soma_g1_sonic_recipe.md` (added)
+- `scripts/data/locomanilab_check_g1_ingestion.py` (added)
+- `scripts/data/locomanilab_lerobot_v21_to_v30.py` (added)
+- `scripts/data/soma_check_g1_ingestion.py` (added)
+- `scripts/data/soma_lerobot_v21_to_v30.py` (added)
+- `scripts/setup_env.sh` (added)
+- `src/lerobot/dataset_schemas/configs/unitree_g1_sonic.yaml` (added)
+- `src/lerobot/policies/internvla_a1_5/configuration_internvla_a1_5.py` (modified)
+- `src/lerobot/policies/internvla_a1_5/transform_internvla_a1_5.py` (modified)
+- `tests/test_locomanilab_entrypoints.py` (added)
+- `tools/widen_for_g1_sonic.py` (added)
+
+The upstream [LICENSE](LICENSE) (Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International, CC BY-NC-SA 4.0, Shanghai AI Laboratory) is retained unchanged. As required by its ShareAlike term, these modifications are licensed under the same CC BY-NC-SA 4.0 license, so the non-commercial restriction applies to this fork as a whole, including the LocoManiLab changes. The MIT license of the main LocoManiLab repository does not extend to this fork.
+
+---
+
 # InternVLA-A1.5: Unifying Understanding, Latent Foresight, and Action for Compositional Generalization
 
 ![InternVLA-A1.5 teaser](assets/teaser.png)
